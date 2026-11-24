@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>茶小二 · 收银台</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif;background:#f5f6f7;color:#222;min-height:100vh;display:flex;flex-direction:column}
+
+  .hd{background:#fff;padding:18px;text-align:center;border-bottom:1px solid #eee}
+  .hd h1{font-size:19px;font-weight:600;letter-spacing:1px}
+  .hd p{font-size:12px;color:#999;margin-top:4px}
+  .tag{display:inline-block;margin-top:8px;font-size:11px;color:#b8860b;background:#fff8e6;border:1px solid #ffe0a3;border-radius:10px;padding:2px 10px}
+
+  .card{background:#fff;margin:12px;border-radius:14px;padding:22px 18px;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,.04)}
+
+  .cd-label{font-size:13px;color:#666}
+  .cd-time{font-size:40px;font-weight:700;color:#1677ff;font-variant-numeric:tabular-nums;margin:6px 0 2px;letter-spacing:2px}
+  .cd-tip{font-size:12px;color:#999}
+  .cd-time.warn{color:#e64340;animation:blink 1s infinite}
+  @keyframes blink{50%{opacity:.35}}
+
+  .qr-wrap{margin:18px auto;width:210px}
+  .qr{width:210px;height:210px;border:1px solid #eee;border-radius:10px;display:block}
+
+  .expired{display:none;width:210px;height:210px;margin:18px auto;border:1px dashed #ddd;border-radius:10px;background:#fafafa;flex-direction:column;align-items:center;justify-content:center;color:#999}
+  .expired .ico{font-size:38px;margin-bottom:10px}
+  .expired .t1{font-size:15px;color:#666;font-weight:600}
+  .expired .t2{font-size:12px;margin-top:6px;padding:0 16px;line-height:1.6}
+
+  .btn{display:block;width:100%;padding:14px;border:none;border-radius:26px;font-size:16px;font-weight:600;margin-top:12px}
+  .btn-main{background:#1677ff;color:#fff}
+  .btn:disabled{background:#dcdfe4;color:#9aa0a8}
+
+  .switch{margin-top:12px;font-size:12px;color:#999}
+  .switch a{color:#1677ff;text-decoration:none;margin:0 6px}
+  .switch a.on{font-weight:700;text-decoration:underline}
+
+  .tip{font-size:12px;color:#999;text-align:center;padding:10px 16px 26px;line-height:1.7}
+
+  .mask{position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:99;display:none;color:#fff;text-align:center;padding-top:56px}
+  .mask .a{font-size:19px;font-weight:600}
+  .mask .b{font-size:14px;margin-top:10px;opacity:.85}
+  .mask .arrow{font-size:190px;line-height:1;margin-top:18px}
+</style>
+</head>
+<body>
+
+<div class="hd">
+  <h1>茶小二</h1>
+  <p>推荐使用支付宝 · 安全支付 官方渠道</p>
+  <span class="tag">支持信用卡 · 花呗付款</span>
+</div>
+
+<div class="card">
+  <div class="cd-label">支付剩余时间</div>
+  <div class="cd-time" id="cd">15:00</div>
+  <div class="cd-tip" id="cdTip">请在倒计时内完成支付</div>
+
+  <div class="qr-wrap" id="qrWrap">
+    <img class="qr" id="qr" src="" alt="收款码">
+  </div>
+
+  <div class="expired" id="expired">
+    <div class="ico">&#9201;</div>
+    <div class="t1">二维码已失效</div>
+    <div class="t2">支付超时，请返回后重新进入本页面</div>
+  </div>
+
+  <button class="btn btn-main" id="payBtn" onclick="goPay()">打开支付宝付款</button>
+
+  <div class="switch" id="switch"></div>
+</div>
+
+<div class="tip">
+  点击按钮将跳转支付宝完成支付<br>
+  若无法跳转，请长按上方二维码识别<br><br>
+  为保障资金安全，请勿向任何额外账户转账、勿参与刷单返利
+</div>
+
+<div class="mask" id="mask">
+  <div class="a">请点击右上角 ···</div>
+  <div class="b">选择在「浏览器打开」</div>
+  <div class="arrow">&#8599;</div>
+</div>
+
+<script>
+/* ===== 配置：三条官方收款链接 ===== */
+var LINKS = [
+  'https://qr.alipay.com/45t10206rqmohok0bupalb6',
+  'https://qr.alipay.com/2m614466nlyo3ujnhrk61be',
+  'https://qr.alipay.com/fkx15004hmiijfybmdv5m00'
+];
+var DURATION = 15 * 60;
+
+/* ===== 选择通道：?code=1/2/3 指定，默认随机 ===== */
+function pickCode(){
+  var p = new URLSearchParams(location.search);
+  var n = parseInt(p.get('code'), 10);
+  if(n >= 1 && n <= LINKS.length) return n - 1;
+  return Math.floor(Math.random() * LINKS.length);
+}
+var cur = pickCode();
+
+/* ===== 状态 ===== */
+var left = DURATION;
+var timer = null;
+var expired = false;
+
+var $cd      = document.getElementById('cd');
+var $cdTip   = document.getElementById('cdTip');
+var $qr      = document.getElementById('qr');
+var $qrWrap  = document.getElementById('qrWrap');
+var $expired = document.getElementById('expired');
+var $payBtn  = document.getElementById('payBtn');
+var $switch  = document.getElementById('switch');
+
+function qrSrc(link){
+  return 'https://api.qrserver.com/v1/create-qr-code/?size=420x420&margin=10&data=' + encodeURIComponent(link);
+}
+
+function renderSwitch(){
+  var h = '收款通道 ';
+  for(var i = 0; i < LINKS.length; i++){
+    h += '<a href="javascript:;" class="' + (i === cur ? 'on' : '') + '" onclick="switchCode(' + i + ')">' + (i + 1) + '</a>';
+  }
+  $switch.innerHTML = h;
+}
+
+/* ===== 切换通道：与倒计时同步重置 ===== */
+function switchCode(i){
+  if(expired) return;
+  cur = i;
+  left = DURATION;
+  $qr.src = qrSrc(LINKS[cur]);
+  renderSwitch();
+}
+
+/* ===== 倒计时：与二维码显示同步启动 ===== */
+function tick(){
+  if(expired) return;
+
+  var m = String(Math.floor(left / 60)).padStart(2, '0');
+  var s = String(left % 60).padStart(2, '0');
+  $cd.textContent = m + ':' + s;
+
+  if(left <= 60) $cd.classList.add('warn');
+
+  if(left <= 0){ doExpire(); return; }
+  left--;
+}
+
+/* ===== 到期：隐藏二维码 + 禁用支付 ===== */
+function doExpire(){
+  expired = true;
+  clearInterval(timer); timer = null;
+
+  $cd.textContent = '00:00';
+  $cd.classList.remove('warn');
+  $cdTip.textContent = '支付已超时';
+
+  $qrWrap.style.display  = 'none';
+  $expired.style.display = 'flex';
+
+  $payBtn.disabled = true;
+  $payBtn.textContent = '二维码已失效';
+  $switch.style.display = 'none';
+}
+
+/* ===== 支付：到期后彻底拦截 ===== */
+function goPay(){
+  if(expired) return;
+
+  if(/MicroMessenger/i.test(navigator.userAgent)){
+    document.getElementById('mask').style.display = 'block';
+    return;
+  }
+
+  var url = LINKS[cur];
+  var t = Date.now();
+  location.href = 'alipays://platformapi/startapp?appId=20000067&url=' + encodeURIComponent(url);
+  setTimeout(function(){ if(!expired && Date.now() - t < 2500) location.href = url; }, 1200);
+}
+
+/* ===== 页面加载即启动（二维码与倒计时同步）===== */
+window.addEventListener('load', function(){
+  $qr.src = qrSrc(LINKS[cur]);
+  renderSwitch();
+  tick();
+  timer = setInterval(tick, 1000);
+});
+
+/* 防止后退缓存拿到旧页面 */
+window.addEventListener('pageshow', function(e){
+  if(e.persisted) location.reload();
+});
+</script>
+</body>
+</html>
